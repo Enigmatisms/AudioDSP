@@ -9,6 +9,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from librosa.core import lpc
 
+path_prefix = ".\\raw\\"
+
 """
     想法是：
         1. 输入一段音频，压缩（采样率8000Hz，尝试一下，原来的采样率为22KHz）加噪（零均值白噪声）
@@ -17,9 +19,10 @@ from librosa.core import lpc
             协方差矩阵可能也不是一个对角阵，任意两个采样点之间可能不是独立的
         @todo
         4. 迭代过程中，状态转移的噪声协方差R不是一直固定的（一开始可以建模成完全固定的情况），噪声本身的方差是一定的（高斯白噪声过程决定）
-            但是这个方差我们是不知道的，我们需要对其进行估计。LPC由于估计的是系统的最优参数（最小二乘的方法），那么必然会存在误差。假设无噪声信号就是系统的输出，那么误差就是加入的零均值噪声
-            那么误差的协方差就是LPC的协方差。由于librosa的lpc函数没有协方差输出，所以我们需要把库函数提出来自己加接口。但是不知道使用forward还是backward
-            则此情况下R是自适应的
+            但是这个方差我们是不知道的，我们需要对其进行估计。LPC由于估计的是系统的最优参数（最小二乘的方法），
+            那么必然会存在误差。假设无噪声信号就是系统的输出，那么误差就是加入的零均值噪声
+            那么误差的协方差就是LPC的协方差。由于librosa的lpc函数没有协方差输出，所以我们需要把库函数提出来自己加接口。
+            但是不知道使用forward还是backward.此情况下R是自适应的
         5. 每次迭代按照 predict（先验：状态转移，使用Xhat(n-1)以及A(n-1) R(n-1)得到先验估计）+ correct（后验：使用当前观测得到观测误差计算Kalman增益）
 
     难点：
@@ -29,8 +32,33 @@ from librosa.core import lpc
         3. 一次迭代肯定不够，一次Kalman滤波一帧所有采样点之后求一个线性预测系数，根据这个系数重新预测（可以收敛到弱噪声数据上）
 """
 class KalmanAudio:
-    def __init__(self):
-        pass
+    def __init__(self, _path, order = 16, length = 200):
+        self.ord = order
+        self.frames = None          # 二维分帧后的矩阵 分帧后以一行为一帧
+        self.frame_num = 0
+        self.len = length
+        self.loadCompressClip(_path)
+        self.NC = np.zeros((order, 1))
+        self.H = np.zeros((order, 1))
+        self.NC[0] = 1.0
+        self.H[0] = 1.0
+
+        self.output = np.zeros(self.frames.size)
+
+        #================ KalmanFilter 模块 ================
+        self.oldState = np.zeros((order, 1))             # 历史状态
+        self.statePre = np.zeros((order, 1))             # 先验估计
+        self.statePost = np.zeros((order, 1))            # 后验估计
+        self.stateCovPre = np.eye(order)            # 状态先验协方差
+        self.stateCovPost = np.eye(order)           # 状态后验协方差
+        self.stateNoiseErrorCov = np.zeros((order, 1))   # 状态噪声协方差
+        self.measureNoiseCov = np.zeros((order, order))  # 观测协方差
+
+    # librosa函数的提取以及修改（让其可以返回协方差）
+    @staticmethod
+    def LPC(self, y, sr):
+        return self.zeros(self.ord), self.eye(self.ord)
+
 
     def loadCompressClip(self, path:str):
         pass
@@ -38,5 +66,46 @@ class KalmanAudio:
     def saveAudio(self, path:str):
         pass
 
-    def filter(self):
-        pass
+    # 得到状态转移矩阵A
+    @staticmethod
+    def getTransition(self, coeffs):
+        return np.array([])
+
+    """
+        滤波主函数
+        ------------
+        Parameters
+        max_iter LPC与KF交替迭代次数
+    """
+    def filtering(self, max_iter = 3):
+        for fr in range(self.frame_num):
+            self.oldState = self.statePost.copy()
+            if fr == 0:
+                start_pos = self.ord
+            else:
+                start_pos = 0
+            
+            for i in range(max_iter):
+                # 此处是LPC操作 coeffs 为系数向量
+                
+                for p in range(start_pos, self.len):
+                    coeffs, self.stateNoiseErrorCov = KalmanAudio.LPC(self.output[fr, :], self.ord);
+                    coeffs = coeffs[1:]         # librosa LPC操作第一位应该是x(n), 降序 x(n), x(n-1)...
+                    A = self.getTransition(coeffs)
+
+                    self.statePre = A.dot(self.statePost)
+                    self.stateCovPre = (A @ self.stateCovPost @ A.transpose()
+                        + self.NC @ self.stateNoiseErrorCov @  self.NC.transpose()
+                    )
+                    temp = self.H @ self.stateCovPre @ self.H.transpose() + self.measureNoiseCov
+                    Minv = np.linalg.solve(temp, np.eye(self.ord))
+                    K = self.stateCovPre @ self.H.transpose() @ Minv
+                    self.statePost = self.statePre + K * (self.frames[fr, p] - self.statePre[0]) 
+                    self.stateCovPost = (np.eye(self.ord) - K @ self.H) @ self.stateCovPre
+                    insert_pos = fr * self.len + self.ord + 1 + p - start_pos       # 加一是否必须？
+                    self.output[insert_pos - self.ord : insert_pos] = self.statePost.transpose()
+                start_pos = 0
+                if i < max_iter - 1:
+                    self.statePost = self.oldState
+
+    
