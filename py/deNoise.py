@@ -32,7 +32,7 @@ path_prefix = ".\\raw\\"
         3. 一次迭代肯定不够，一次Kalman滤波一帧所有采样点之后求一个线性预测系数，根据这个系数重新预测（可以收敛到弱噪声数据上）
 """
 class KalmanAudio:
-    def __init__(self, _path, order = 16, length = 200):
+    def __init__(self, _path, order = 16, length = 400):
         self.ord = order
         self.frames = None          # 二维分帧后的矩阵 分帧后以一行为一帧
         self.frame_num = 0
@@ -40,17 +40,18 @@ class KalmanAudio:
         self.loadCompressClip(_path)
         self.NC = np.zeros((order, 1))
         self.H = np.zeros((order, 1))
-        self.NC[0] = 1.0
-        self.H[0] = 1.0
+        self.NC[-1] = 1.0
+        self.H[-1] = 1.0
 
         self.output = np.zeros(self.frames.size)
+        self.origin_data = np.zeros(self.frames.size)
 
         #================ KalmanFilter 模块 ================
         self.oldState = np.zeros((order, 1))             # 历史状态
         self.statePre = np.zeros((order, 1))             # 先验估计
         self.statePost = np.zeros((order, 1))            # 后验估计
-        self.stateCovPre = np.eye(order)            # 状态先验协方差
-        self.stateCovPost = np.eye(order)           # 状态后验协方差
+        self.stateCovPre = np.eye(order) * 0.75 + np.ones((order, order)) * 0.25            # 状态先验协方差
+        self.stateCovPost = np.eye(order) * 0.75 + np.ones((order, order)) * 0.25            # 状态后验协方差
         self.stateNoiseErrorCov = np.zeros((order, 1))   # 状态噪声协方差
         self.measureNoiseCov = np.zeros((order, order))  # 观测协方差
 
@@ -60,16 +61,31 @@ class KalmanAudio:
         return self.zeros(self.ord), self.eye(self.ord)
 
 
-    def loadCompressClip(self, path:str):
-        pass
+    def loadCompressClip(self, path:str, scale = 0.1):
+        _data, sr = lr.load(path)
+        data = lr.resample(_data, sr, 8000)
+        sz = data.size
+        tail = sz % self.len
+        data = data[:-tail]
+        self.origin_data = data.copy()                      # 保存原数据
+        data += np.random.normal(0, scale, data.size)       # 加噪处理，高斯白噪声 标准差为0.1
+        self.frame_num = int(sz / self.len)
+        self.frames = np.zeros((self.frame_num, self.len))
+        for i in range(self.frame_num):
+            self.frames[i, :] = data[i * self.len : (i + 1) * self.len]
+        print("Framing process completed.")
 
+    # deprecated?
     def saveAudio(self, path:str):
         pass
 
     # 得到状态转移矩阵A
     @staticmethod
-    def getTransition(self, coeffs):
-        return np.array([])
+    def getTransition(self, coeffs, order):
+        _A = np.zeros((order, order))
+        _A[-1, :] = np.flip(coeffs)
+        _A[:-1, 1:] = np.eye(order - 1)
+        return _A
 
     """
         滤波主函数
@@ -78,21 +94,23 @@ class KalmanAudio:
         max_iter LPC与KF交替迭代次数
     """
     def filtering(self, max_iter = 3):
+        # 对每一帧进行操作
         for fr in range(self.frame_num):
             self.oldState = self.statePost.copy()
             if fr == 0:
                 start_pos = self.ord
+                self.statePost = self.frames[fr, :self.ord].reshape(-1, 1)     # 初始后验估计
             else:
                 start_pos = 0
             
-            for i in range(max_iter):
+            for i in range(max_iter):       # 每一帧KF与LPC交替迭代 max_iter次
                 # 此处是LPC操作 coeffs 为系数向量
                 
-                for p in range(start_pos, self.len):
-                    coeffs, self.stateNoiseErrorCov = KalmanAudio.LPC(self.output[fr, :], self.ord);
-                    coeffs = coeffs[1:]         # librosa LPC操作第一位应该是x(n), 降序 x(n), x(n-1)...
-                    A = self.getTransition(coeffs)
-
+                coeffs, self.stateNoiseErrorCov = KalmanAudio.LPC(self.output[fr, :], self.ord)
+                coeffs = coeffs[1:]         # librosa LPC操作第一位应该是x(n), 降序 x(n), x(n-1)...
+                A = self.getTransition(coeffs, self.ord)
+                for p in range(start_pos, self.len):    # 每一帧的所有数据进行滤波 当为第一帧时，第一次滤波从order索引处开始
+                    # ================ KF 操作开始 ===================
                     self.statePre = A.dot(self.statePost)
                     self.stateCovPre = (A @ self.stateCovPost @ A.transpose()
                         + self.NC @ self.stateNoiseErrorCov @  self.NC.transpose()
@@ -102,10 +120,12 @@ class KalmanAudio:
                     K = self.stateCovPre @ self.H.transpose() @ Minv
                     self.statePost = self.statePre + K * (self.frames[fr, p] - self.statePre[0]) 
                     self.stateCovPost = (np.eye(self.ord) - K @ self.H) @ self.stateCovPre
-                    insert_pos = fr * self.len + self.ord + 1 + p - start_pos       # 加一是否必须？
+                    #=================== KF 结束 ======================
+
+                    insert_pos = fr * self.len + self.ord + p - start_pos + 1
                     self.output[insert_pos - self.ord : insert_pos] = self.statePost.transpose()
                 start_pos = 0
                 if i < max_iter - 1:
-                    self.statePost = self.oldState
+                    self.statePost = self.oldState.copy()      # 保持初始后验估计
 
     
