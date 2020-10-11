@@ -13,22 +13,25 @@
     测试集进行验证
 """
 
+import os
 import librosa as lr
-from librosa.core.audio import resample
-from librosa.core.spectrum import amplitude_to_db
-from librosa.util.utils import frame
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.svm import SVC
 import time
 
 # 无加窗操作的framing
-def windowedFrames(data, fnum = 56):
+def windowedFrames(data, fnum = 50):
     length = data.size
     flen = int(np.floor(length / 0.9 / fnum))
     frames = np.zeros((fnum, flen))
     shift = int(0.9 * flen)
+    print(frames.shape, flen, shift, data.size)
     for i in range(fnum):
-        frames[i, :] = data[i * shift: i * shift + flen]
+        if i * shift + flen > length:
+            frames[i, : length - i * shift] = data[i * shift:]
+        else:
+            frames[i, :] = data[i * shift: i * shift + flen]
     return frames
     
 # 得到一个fnum * 1维向量，为每一帧的平均幅度
@@ -39,7 +42,7 @@ def averageAmplitude(frames, fnum = 50):
     res /= np.max(res)      # 最值归一化
     return res
 
-# 平均过零率 向量
+# 平均过零率 向量(无需归一化）
 def averageZeroCrossingRate(frames, fnum = 50):
     res = np.zeros(fnum)
     _, cols = frames.shape
@@ -51,15 +54,19 @@ def averageZeroCrossingRate(frames, fnum = 50):
         res[i] = cnt / frames.size
     return res
 
-# 平均幅度差 (半帧)
+# 平均幅度差 (半帧 / 0.25 帧长 自相关)
 def averageAmpDiff(frames, fnum = 50):
     _, cols = frames.shape
     half = int(cols / 2)
-    res = np.zeros(fnum)
-    for i in range(fnum):
-        res[i] = sum(abs(frames[i, :-half] - frames[i, half:]))
-    res / np.max(res)
-    return res
+    dhalf = int(half / 2)
+    res1 = np.zeros(fnum)
+    res2 = np.zeros(fnum)
+    for i in range(0, fnum):
+        res1[i] = sum(abs(frames[i, :-half] - frames[i, half:]))        # 半帧帧移类自相关特征
+        res2[i] = sum(abs(frames[i, :-dhalf] - frames[i, dhalf:]))      # 1/4 帧移类自相关特征
+    res1 /= np.max(res1)
+    res2 /= np.max(res2)
+    return np.concatenate((res1, res2)) 
 
 # 个人觉得这个特征很可能不行，而且还会很慢
 def getLPC(frames, fnum = 50):
@@ -71,7 +78,7 @@ def getLPC(frames, fnum = 50):
     res /= np.max(res)
     return res
 
-# 如果是一段语音分为50帧，那么得到的结果就是一个长度为200的向量，大概为14 * 14 ~ 15 * 15图片的规模（不过是浮点数）
+# 如果是一段语音分为50帧，那么得到的结果就是一个长度为250的向量，大概为16 * 16图片的规模（不过是浮点数）
 def getFeatures(frames, fnum = 50):
     amp = averageAmplitude(frames, fnum)
     azc = averageZeroCrossingRate(frames, fnum)
@@ -79,21 +86,50 @@ def getFeatures(frames, fnum = 50):
     lpc = getLPC(frames, fnum)
     return np.concatenate((amp, azc, aad, lpc))
 
-if __name__ == "__main__":
-    number = 1
-    fnum = 50
-    feats = None
-    for i in range(12):
-        path = "..\\simple\\%d\\%d_%02d.wav"%(number, number, i + 1)
-        data, sr = lr.load(path, sr = None)
-        data = lr.resample(data, sr, 8000)
-        frms = windowedFrames(data, fnum)
-        if i == 0:
-            feats = getFeatures(frms, fnum)
-        else:
-            _f = getFeatures(frms, fnum)
-            feats = np.vstack((feats, _f))
-        print("Loading from " + path)
+def loadWavs(head = "..\\simple\\", fnum = 50):
+    feats = []
+    classes = []
+    for num in range(10):
+        directory = head + "%d"%(num)
+        if os.path.exists(directory) == True:
+            for i in range(20):
+                path = directory + "\\%d_%02d.wav"%(num, i + 1)
+                if os.path.exists(path) == False:
+                    break
+                data, sr = lr.load(path, sr = None)
+                data = lr.resample(data, sr, 8000)
+                frms = windowedFrames(data, fnum)
+                feats.append(getFeatures(frms, fnum))
+                classes.append(num)         # 类别增加
+                print("Loading from " + path)
+
+    feats = np.array(feats)
+    classes = np.array(classes)
+
     print("Features: ", feats)
+    print("Features shape: ", feats.shape)
+    print("Classes: ", classes)
+
+    return feats, classes
+
+if __name__ == "__main__":
+    fnum = 50
+
+    C = 100
+    gamma = 0.001
+    max_iter = 2000
+
+    train_data, train_label = loadWavs(fnum = fnum)
+
+    test_data, test_label = loadWavs(head = "..\\simple\\c")
+
+    clf = SVC(C = C, gamma = gamma, max_iter = max_iter, kernel = 'rbf')
+    clf.fit(train_data, train_label)
+    res = clf.predict(test_data)
+
+    print("Predicted result: ", res)
+    print("While truth is: ", test_label)
+    print("Difference is: ", res - test_label)
+
     # plt.plot(np.arange(data.size), data, c = "k")
     # plt.show()
