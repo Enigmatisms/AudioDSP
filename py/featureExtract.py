@@ -14,11 +14,13 @@
 """
 
 import os
+import pickle
 import librosa as lr
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.svm import SVC
 import time
+import pickle as pkl
 
 # 无加窗操作的framing
 def windowedFrames(data, fnum = 50):
@@ -26,7 +28,7 @@ def windowedFrames(data, fnum = 50):
     flen = int(np.floor(length / 0.9 / fnum))
     frames = np.zeros((fnum, flen))
     shift = int(0.9 * flen)
-    print(frames.shape, flen, shift, data.size)
+    # print(frames.shape, flen, shift, data.size)
     for i in range(fnum):
         if i * shift + flen > length:
             frames[i, : length - i * shift] = data[i * shift:]
@@ -86,14 +88,14 @@ def getFeatures(frames, fnum = 50):
     lpc = getLPC(frames, fnum)
     return np.concatenate((amp, azc, aad, lpc))
 
-def loadWavs(head = "..\\simple\\", fnum = 50):
+def loadWavs(head = "..\\full\\", fnum = 50):
     feats = []
     classes = []
     for num in range(10):
         directory = head + "%d"%(num)
         if os.path.exists(directory) == True:
-            for i in range(20):
-                path = directory + "\\%d_%02d.wav"%(num, i + 1)
+            for i in range(105):                    # 最多105个
+                path = directory + "\\%d.wav"%(i + 1)
                 if os.path.exists(path) == False:
                     break
                 data, sr = lr.load(path, sr = None)
@@ -106,10 +108,6 @@ def loadWavs(head = "..\\simple\\", fnum = 50):
     feats = np.array(feats)
     classes = np.array(classes)
 
-    print("Features: ", feats)
-    print("Features shape: ", feats.shape)
-    print("Classes: ", classes)
-
     return feats, classes
 
 if __name__ == "__main__":
@@ -119,17 +117,29 @@ if __name__ == "__main__":
     gamma = 0.001
     max_iter = 2000
 
-    train_data, train_label = loadWavs(fnum = fnum)
+    load = True             # 是否加载训练集（是否使用保存的模型）
 
-    test_data, test_label = loadWavs(head = "..\\simple\\c")
+    test_data, test_label = loadWavs(head = "..\\full\\c")
+    if load == True:
+        train_data, train_label = loadWavs(fnum = fnum)
+        clf = SVC(C = C, gamma = gamma, max_iter = max_iter, kernel = 'rbf')
+        clf.fit(train_data, train_label)
+        
+        with open("..\\model\\svm.bin", "wb") as file:      # pickle 保存模型
+            pkl.dump(clf, file)
+    else:    # pickle 加载模型
+        with open("..\\model\\svm.bin", "rb") as file:
+            clf = pkl.load(file)
 
-    clf = SVC(C = C, gamma = gamma, max_iter = max_iter, kernel = 'rbf')
-    clf.fit(train_data, train_label)
     res = clf.predict(test_data)
 
     print("Predicted result: ", res)
     print("While truth is: ", test_label)
     print("Difference is: ", res - test_label)
+
+    rights = (res - test_label).astype(bool)
+    print("Right Ratio: ", rights.sum() / res.size)
+
 
     # plt.plot(np.arange(data.size), data, c = "k")
     # plt.show()
