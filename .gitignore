@@ -3,3 +3,9 @@
 */*.mp3
 *.mp3
 *.pkl
+data/
+*/*.csv
+*/*.pdf
+*/*.bin
+*/*.pkl
+*/*.xml
