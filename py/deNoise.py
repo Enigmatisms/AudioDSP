@@ -159,8 +159,24 @@ class KalmanAudio:
         end_time = time.time()
         print("Running time: ", end_time - start_time)
 
+# FIR 滤波器
+def showFFT(data, show_phase = False):
+    res = np.fft.fft(data)
+    amps = np.sqrt(res * res.conjugate())
+    phases = np.arctan(res.imag / (res.real + np.ones_like(res) * 1e-7))
+    size = res.size
+    start_pos = int(size / 2) - size
+    plt.figure(1)
+    plt.plot(np.arange(start_pos, start_pos + size), amps, c = 'k')
+    plt.title("Amplitude")
+    if show_phase:
+        plt.figure(2)
+        plt.plot(np.arange(start_pos, start_pos + size), phases, c = 'k')
+        plt.title("Phases")
+    plt.show()
+
 if __name__ == "__main__":
-    number = 1
+    number = 2
     inpath = path_prefix + str(number) + ".wav"
     outpath = "..\\data\\" + str(number) + ".csv"
     ka = KalmanAudio(inpath)
@@ -168,5 +184,8 @@ if __name__ == "__main__":
     ka.filtering()
     print("Filter process completed.")
     ka.drawResult(outpath, True)
+    # inpath = "..\\full\\%d\\1.wav"%(number)
+    # data, sr = lr.load(inpath)
+    # showFFT(data)
 
     

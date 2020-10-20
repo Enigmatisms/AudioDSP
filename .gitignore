@@ -4,8 +4,10 @@
 *.mp3
 *.pkl
 data/
+*.pkf
 */*.csv
 */*.pdf
 */*.bin
 */*.pkl
 */*.xml
+*/*.pkf
