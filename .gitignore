@@ -11,3 +11,6 @@ data/
 */*.pkl
 */*.xml
 */*.pkf
+*/*.bin
+*/*.h5
+*/*.txt
