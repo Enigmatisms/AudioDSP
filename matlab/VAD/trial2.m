@@ -1,6 +1,6 @@
-number=8;
-filename1=strcat('C:\Users\zhang\Desktop\语音示例\',num2str(number),'.wav');
-[x,fs]=audioread(filename1);  % 读入数据文件
+number=9;
+filename1=strcat('?D:\AudioDSP\voice_stream\',num2str(number),'.wav');
+[x,fs]=audioread("D:\AudioDSP\voice_stream\5.wav");  % 读入数据文件
 x=x/max(abs(x));    % 幅度归一化
 N=length(x);                            % 取信号长度
 time=(0:N-1)/fs;                        % 计算时间
