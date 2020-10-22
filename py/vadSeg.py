@@ -11,8 +11,10 @@ import librosa as lr
 import cv2 as cv
 import sys
 
-maxsilence = 15
-minlen  = 7   
+
+_fig_num = 1
+__maxsilence__ = 10
+__minlen__  = 9
 
 count   = [0]
 silence = [0]
@@ -72,20 +74,17 @@ def zeroCrossingRate(y, fn):
         zcr[i] = sum(ym[:-1] * ym[1:] < 0)
     return zcr
 
-def VAD(y, wlen, inc, NIS):
-    y = y.T
+def VAD(y, zcrs, wlen, inc, NIS):
     fn = y.shape[1]
     amp = sum(y ** 2)
-    zcr = zeroCrossingRate(y, fn)
     sampling_pos = int(NIS / 2)
     ampth = (np.mean(amp[:sampling_pos]) + np.mean(amp[-sampling_pos:])) / 2 
     # ampth = np.mean(amp[:NIS])
     zcrth = (np.mean(amp[:sampling_pos]) + np.mean(amp[-sampling_pos:])) / 2
-    zcrth = np.mean(zcr[:NIS])
-    print("Thresholds:", ampth, ", ", zcrth)
-    amp2 = 0.09
-    amp1 = 0.11
-    zcr2 = 0.1 * zcrth
+    zcrth = np.mean(zcrs[:NIS])
+    amp2 = 0.155
+    amp1 = 0.205
+    zcr2 = 0.15 * zcrth
 
     status  = 0
     xn = 0
@@ -98,7 +97,7 @@ def VAD(y, wlen, inc, NIS):
                 status = 2
                 silence[xn] = 0
                 count[xn] += 1
-            elif amp[n] > amp2 or zcr[n] < zcr2:
+            elif amp[n] > amp2 or zcrs[n] < zcr2:
                 status = 1
                 count[xn] += 1
             else:
@@ -107,13 +106,13 @@ def VAD(y, wlen, inc, NIS):
                 x1[xn] = 0
                 x2[xn] = 0
         elif status == 2:
-            if amp[n] > amp2 or zcr[n] < zcr2:
+            if amp[n] > amp2 or zcrs[n] < zcr2:
                 count[xn] += 1
             else:
                 silence[xn] += 1
-                if silence[xn] < maxsilence:
+                if silence[xn] < __maxsilence__:
                     count[xn] += 1
-                elif count[xn] < minlen:
+                elif count[xn] < __minlen__:
                     status = 0
                     silence[xn] = 0
                     count[xn] = 0
@@ -131,27 +130,16 @@ def VAD(y, wlen, inc, NIS):
     e1 = len(x1)
     if x1[-1] == 0:
         e1 -= 1
-    # if x2[e1] == 0:
-    #     print("Error: could not find the ending point.")
-    #     x2[e1] = fn
     SF = np.zeros(fn)
     NF = np.ones(fn)
     for i in range(e1):
         SF[x1[i]:x2[i]] = 1
         NF[x1[i]:x2[i]] = 0
     speechIndex = np.arange(SF.size)[SF == 1]
-    print("SF:", SF)
-    print("x1:", x1)
-    print("x2:", x2)
-    print("fn:", fn)
     starts, ends = findSegment(speechIndex)
-    print("Start size and ends size:", len(starts), " & ", len(ends))
     return np.array(starts), np.array(ends)
 
-# VAD 得到结果后需要进行进一步处理，向前取 3600 个数据点（在800 / 400 设置下是9个帧）
-# 首先需要求差分：平均幅度变化率,如果一直在递减
-# 需要退火式的搜索
-# end也需要类似搜索方法 由于end较小，需要一个自适应的门限（start 为1/4， end则要根据对应端点平均幅度调整）
+# VAD 得到结果后需要进行进一步处理 退火式的搜索
 def vadPostProcess(amps, starts, prev = 8):
     threshold = amps[starts] / 4            # 1/4 当前门限
     for i, start in enumerate(starts):
@@ -183,8 +171,10 @@ def faultsFiltering(amps, starts, ends, thresh):
     return _starts, _ends
 
 # 平均幅度的可视化
-def averageAmpPlot(amps, starts, ends, plot_diff = True):
-    plt.figure(2)
+def averageAmpPlot(amps, starts, ends, plot_diff = True, save = False, path = ""):
+    global _fig_num
+    plt.figure(_fig_num)
+    _fig_num += 1
     fn = amps.shape[0]
     plt.plot(np.arange(fn), amps, c = 'k')
     plt.scatter(np.arange(fn), amps, c = 'k', s = 6)
@@ -196,7 +186,6 @@ def averageAmpPlot(amps, starts, ends, plot_diff = True):
         amp_mean = np.mean(amps[start:end])
         plt.annotate("%.3f"%(amp_mean), xy = (start, 0.5), xytext = (start, 0.5))
     plt.title("Average Amplitude")
-
     if plot_diff:
         plt.figure(3)
         diff = amps[:-1] - amps[1:]
@@ -208,60 +197,101 @@ def averageAmpPlot(amps, starts, ends, plot_diff = True):
             plt.plot(np.ones_like(ys) * start, ys, c = 'red')
             plt.plot(np.ones_like(ys) * end, ys, c = 'blue')
             plt.title("Average Amplitude Difference")
+    if save:
+        plt.savefig(path)
+        plt.cla()
+        plt.clf()
+        plt.close()
 
-def plotNewStartsEnds(starts, ends, inc = 1):
+def plotZeroCrossRate(zcrs, starts, ends):
+    global _fig_num
+    plt.figure(_fig_num)
+    _fig_num += 1
+    zcrs /= max(zcrs)
+    plt.plot(np.arange(zcrs.size), zcrs, c = 'k')
+    plt.scatter(np.arange(zcrs.size), zcrs, c = 'k', s = 6)
     for start, end in zip(starts, ends):
-        ys = np.linspace(-0.5, 0.5, 3);
-        plt.plot(np.ones_like(ys) * start * inc, ys, c = 'green')
-        plt.plot(np.ones_like(ys) * end * inc, ys, c = 'orange')
+        ys = np.linspace(0, 1, 3);
+        plt.plot(np.ones_like(ys) * start, ys, c = 'red')
+        plt.plot(np.ones_like(ys) * end, ys, c = 'blue')
+    plt.title("Average Zero Crossing Rate")
+
 
 def calculateMeanAmp(frames):
-    fn, wlen = frames.shape
+    wlen, fn = frames.shape
     amps = np.zeros(fn)
     for i in range(fn):
-        amps[i] = sum(abs(frames[i, :])) / wlen
+        amps[i] = sum(abs(frames[:, i])) / wlen
     return amps
 
 def adaptiveThreshold(amps, starts, ends):
     for i in range(starts.__len__()):
         start = starts[i]
+        if start < 0:
+            start = 0
         end = ends[i]
         _amp = amps[start:end]
-        maxi = max(_amp)
-        _amp = _amp / maxi * 255
+        _amp = _amp / max(_amp) * 255
         _amp = _amp.astype(np.uint8)
         _amp = cv.threshold(_amp, 0, 1, cv.THRESH_BINARY | cv.THRESH_OTSU)[1].astype(int)
         _amp = (_amp[:-1] - _amp[1:])
         _amp.resize(_amp.size + 1)
-        start_rev, end_rev = False, False
+        end_counter = 0
         for j in range(_amp.size):
-            if _amp[j] < 0:
-                if start_rev == False:
-                    start_rev == True
-                    starts[i] += int(j / 2)          # 精分割，并扩大一帧选区
-                else:       # 存在可能的多峰
-                    raise ValueError("Start is already reset yet being reset again. Possible spikes detected.")
-            elif _amp[j] > 0:
-                if end_rev ==  False:
-                    end_rev == True
+            if _amp[j] > 0:
+                if end_counter < 2:                         # 多峰时，最多移动两次终止点
+                    end_counter += 1
                     ends[i] = int((end + start + j) / 2)     # 精分割，并扩大一帧选区
-                else:
-                    raise ValueError("End is already reset yet being reset again. Possible spikes detected.")
-
     return starts, ends
 
-        
+# 绘制过零率 幅度结合分量
+def plotCombined(amps, zcrs, starts, ends, coeff = 0.5, plot_thresh = True, save = False, path = ""):
+    to_plot = amps.copy()
+    if plot_thresh:
+        to_plot.astype(int)
+    for i in range(starts.__len__()):
+            start = starts[i]
+            end = ends[i]
+            _amp = amps[start:end]
+            _zcr = zcrs[start:end]
+            _amp = _amp / max(_amp)
+            _zcr = _zcr / max(_zcr) 
+            _amp = (coeff * _amp +(1 - coeff) * _zcr)
+            if plot_thresh:
+                _amp *= 255
+                _amp = _amp.astype(np.uint8)
+                _amp = cv.threshold(_amp, 0, 1, cv.THRESH_BINARY | cv.THRESH_OTSU)[1].astype(int)
+            to_plot[start:end] = _amp.ravel()
+    global _fig_num
+    plt.figure(_fig_num)
+    _fig_num += 1
+    plt.plot(np.arange(to_plot.size), to_plot, c = 'k')
+    plt.scatter(np.arange(to_plot.size), to_plot, c = 'k', s = 6)
+    for i in range(len(starts)):
+        ys = np.linspace(0, 0.5, 5);
+        plt.plot(np.ones_like(ys) * starts[i], ys, c = 'red')
+        plt.plot(np.ones_like(ys) * ends[i], ys, c = 'blue')
+    plt.title("ZCR AMP Combined. Coeff = %.2f"%(coeff))
+    if save:
+        plt.savefig(path)
+
+def reset(num):
+    global _fig_num
+    global count
+    global silence
+    _fig_num = num
+    count   = [0]
+    silence = [0]
+
 if __name__ == "__main__":
     number = sys.argv[1]
-    file = "..\\voice_stream\\" + str(number) + ".wav"
+    seg_num = sys.argv[2]
+    file = "..\\segment\\%s\\%s%02d.wav"%(number, number, int(seg_num))
     data, sr = lr.load(file)
 
     N = data.size
-    time = np.arange(N) / sr
-
     wlen = 800
     inc = 400
-
     IS = 0.5
     overlap = wlen - inc
     NIS = int(np.round((IS * sr - wlen) / inc + 1))
@@ -273,35 +303,35 @@ if __name__ == "__main__":
 
     data_t = data.T.reshape(-1, 1)
     y = enframe(data_t, wlen, inc)          # 分帧操作
+    y = y.T
+    fn = y.shape[1]
+    zcrs = zeroCrossingRate(y, fn)
     amps = calculateMeanAmp(y)              # 平均幅度
-
-    starts, ends = VAD(y, wlen, inc, NIS)
+    # ================= 语音分割以及自适应化 ========================
+    starts, ends = VAD(y, zcrs, wlen, inc, NIS)   
     starts, ends = faultsFiltering(amps, starts, ends, 0.005)
     starts = vadPostProcess(amps, starts, 12)
-    print(starts)
-    rev_starts, rev_ends = adaptiveThreshold(amps, starts, ends)
-    print(starts)
+    adaptiveThreshold(amps, starts, ends)
+    # =============================================================
+
     print("Voice starts:", starts)
     print("Voice ends:", ends)
     print("While the total frame number is: ", fn)
     print("VAD completed.")
+    plt.figure(_fig_num)
+    _fig_num += 1
+
     plt.plot(np.arange(data.size), data, c = 'k')
 
     for i in range(len(starts)):
         ys = np.linspace(-1, 1, 5);
         plt.plot(np.ones_like(ys) * starts[i] * inc, ys, c = 'red')
         plt.plot(np.ones_like(ys) * ends[i] * inc, ys, c = 'blue')
-    plotNewStartsEnds(rev_starts, rev_ends, inc = inc)
 
     averageAmpPlot(amps, starts, ends, False)
-    plotNewStartsEnds(rev_starts, rev_ends)
-    
-    # plt.figure(3)
-    # plt.plot(np.arange(filtered.size), filtered, c = 'k')
-    # for i in range(len(starts)):
-    #     ys = np.linspace(-1, 1, 3);
-    #     plt.plot(np.ones_like(ys) * starts[i], ys, c = 'red')
-    #     plt.plot(np.ones_like(ys) * ends[i], ys, c = 'blue')
+
+    # plotZeroCrossRate(zcrs, starts, ends)
+    # plotCombined(amps, zcrs, starts, ends, plot_thresh = True)
     plt.show()
 
 

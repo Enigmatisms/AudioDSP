@@ -14,3 +14,7 @@ data/
 */*.bin
 */*.h5
 */*.txt
+*/*.zip
+*/*.jpg
+*/*.png
+*/__pycache__
