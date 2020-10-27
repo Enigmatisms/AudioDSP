@@ -3,10 +3,14 @@
     @author HQY
     @date 2020.10.20
     静音分割
+    @todo:
+        # 自适应过滤门限更改 faultFiltering
+        # 删除过短帧
 """
 
 import numpy as np
 import matplotlib.pyplot as plt
+from random import choice as rdc
 import librosa as lr
 import cv2 as cv
 import sys
@@ -14,7 +18,7 @@ import sys
 
 _fig_num = 1
 __maxsilence__ = 10
-__minlen__  = 9
+__minlen__  = 12
 
 count   = [0]
 silence = [0]
@@ -241,8 +245,7 @@ def adaptiveThreshold(amps, starts, ends):
             if _amp[j] > 0:
                 if end_counter < 2:                         # 多峰时，最多移动两次终止点
                     end_counter += 1
-                    ends[i] = int((end + start + j) / 2)     # 精分割，并扩大一帧选区
-    return starts, ends
+                    ends[i] = start + j     # 精分割，并扩大一帧选区
 
 # 绘制过零率 幅度结合分量
 def plotCombined(amps, zcrs, starts, ends, coeff = 0.5, plot_thresh = True, save = False, path = ""):
@@ -274,6 +277,86 @@ def plotCombined(amps, zcrs, starts, ends, coeff = 0.5, plot_thresh = True, save
     plt.title("ZCR AMP Combined. Coeff = %.2f"%(coeff))
     if save:
         plt.savefig(path)
+
+# 退火搜索，想法是：向左右进行端点搜索，退火温度不要太高
+    # 开始时对start - 20, end + 20 内的amps归一化
+    # 最大迭代次数为20次：
+    # 前6次最大步长为3帧，此后变为两帧（左右）
+    # 较高的值按照概率接受（接受变化，但不接受作为最终值）
+    # 较低的值分为正常、临界、异常值
+        # 正常值（合适幅值）直接移动
+        # 临界（处于过大与过小值之间的，难以判定值）：记录临界值数目，按照数目确定的概率接收 0.06~0.03
+            # 临界值多了，接受概率就会变低
+        # 异常值（过小值 < 0.03）：直接终止算法
+    # 帧移不超过20帧（20帧对应了6000）（调整的最大限度）
+    # 开始时就小于0.03的端点不优化
+def annealingSearch(amps, starts, ends, max_mv = 20):
+    length = starts.__len__()
+    for i in range(length):
+        start = starts[i] - max_mv
+        old_end = ends[i]                      # 记录原有的终止点
+        end = ends[i] + max_mv
+        if i == 0:      # 防止array越界
+            start = max(0, start)
+        elif i == length - 1:
+            end = min(amps.size - 1, end)
+        max_val = max(amps[start:end])
+        _temp = amps[start:end].copy()
+        _temp /= max_val                    # 归一化
+        ends[i] = start + annealing(_temp, old_end - start)  # 从原有的终止点开始搜索 返回值为移动的步长
+
+# 异常值阈值 0.03 默认
+def annealing(seg, end, max_iter = 30, ab_thresh = 0.03, start_temp = 0.3):
+    now_pos = end
+    seg_len = len(seg)
+    min_pos = now_pos
+    min_val = seg[now_pos]
+    tipping_cnt = 0
+    for i in range(max_iter):
+        temp = start_temp / (i + 1)
+        if i > 6:
+            step = rdc((1, 2)) * rdc((-1, 1))
+        elif i > 2:
+            step = rdc((1, 2, 3)) * rdc((-1, 1))
+        else:
+            step = rdc((1, 1, 2, 2, 3))
+        tmp_pos = now_pos + step
+        if tmp_pos >= seg_len:
+            tmp_pos = seg_len - 1
+        elif tmp_pos <= 0:
+            tmp_pos = 0
+        now_val = seg[tmp_pos]
+        if now_val < min_val:       # 接受当前移动以及最终移动
+            min_val = now_val
+            now_pos = tmp_pos
+            min_pos = tmp_pos
+        else:
+            # 一般而言，now_val - min_val 都是 0.01级别的
+            # 如果符合metropolis准则，则接受当前移动（但由于比end大，不接受其作为最终解）
+            if  np.random.uniform(0, 1) < np.exp(- (now_val - min_val) / temp):
+                now_pos = tmp_pos
+        this_val = seg[now_pos]
+        if this_val < ab_thresh:
+            return min_pos
+        elif this_val < 2 * ab_thresh:
+            if np.random.uniform(0, 1) < np.exp( - tipping_cnt / 2):
+                return min_pos
+            tipping_cnt += 1
+    return min_pos
+
+def normalizedAmp(amps, starts, ends):
+    for start, end in zip(starts, ends):
+        max_val = max(amps[start - 15:end + 15])
+        amps[start - 15:end + 15] /= max_val
+    global _fig_num
+    plt.figure(_fig_num)
+    _fig_num += 1
+    plt.plot(np.arange(amps.size), amps, c = 'k')
+    plt.scatter(np.arange(amps.size), amps, c = 'k', s = 6)
+    for i in range(len(starts)):
+        ys = np.linspace(0, 1, 3);
+        plt.plot(np.ones_like(ys) * starts[i], ys, c = 'red')
+        plt.plot(np.ones_like(ys) * ends[i], ys, c = 'blue')
 
 def reset(num):
     global _fig_num
@@ -309,9 +392,12 @@ if __name__ == "__main__":
     amps = calculateMeanAmp(y)              # 平均幅度
     # ================= 语音分割以及自适应化 ========================
     starts, ends = VAD(y, zcrs, wlen, inc, NIS)   
-    starts, ends = faultsFiltering(amps, starts, ends, 0.005)
+
+    # TODO:自适应过滤门限更改
+    starts, ends = faultsFiltering(amps, starts, ends, 0.012)
     starts = vadPostProcess(amps, starts, 12)
     adaptiveThreshold(amps, starts, ends)
+    annealingSearch(amps, starts, ends)
     # =============================================================
 
     print("Voice starts:", starts)
@@ -328,7 +414,8 @@ if __name__ == "__main__":
         plt.plot(np.ones_like(ys) * starts[i] * inc, ys, c = 'red')
         plt.plot(np.ones_like(ys) * ends[i] * inc, ys, c = 'blue')
 
-    averageAmpPlot(amps, starts, ends, False)
+    averageAmpPlot(amps, starts, ends, True)
+    normalizedAmp(amps, starts, ends)
 
     # plotZeroCrossRate(zcrs, starts, ends)
     # plotCombined(amps, zcrs, starts, ends, plot_thresh = True)
