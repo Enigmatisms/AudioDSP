@@ -4,8 +4,9 @@
     @date 2020.10.20
     静音分割
     @todo:
-        # 自适应过滤门限更改 faultFiltering
+        # 如何进行鲁棒的噪音估计？
         # 删除过短帧
+    ### @deprecation 本模块即将被删除，因为太乱了，整理优化后的代码放在VAD.py中
 """
 
 import numpy as np
@@ -81,12 +82,8 @@ def zeroCrossingRate(y, fn):
 def VAD(y, zcrs, wlen, inc, NIS):
     fn = y.shape[1]
     amp = sum(y ** 2)
-    sampling_pos = int(NIS / 2)
-    ampth = (np.mean(amp[:sampling_pos]) + np.mean(amp[-sampling_pos:])) / 2 
-    # ampth = np.mean(amp[:NIS])
-    zcrth = (np.mean(amp[:sampling_pos]) + np.mean(amp[-sampling_pos:])) / 2
     zcrth = np.mean(zcrs[:NIS])
-    amp2 = 0.155
+    amp2 = 0.155                # 如何进行鲁棒的噪音估计？
     amp1 = 0.205
     zcr2 = 0.15 * zcrth
 
@@ -168,8 +165,11 @@ def vadPostProcess(amps, starts, prev = 8):
 def faultsFiltering(amps, starts, ends, thresh):
     _starts = []
     _ends = []
+    max_val = max(amps)
+    if thresh > max_val / 4:
+        thresh = max_val / 4
     for start, end in zip(starts, ends):
-        if np.mean(amps[start:end]) > thresh:            # 单门限阈值
+        if np.mean(amps[start:end]) > thresh and end - start >= __minlen__: # 单门限阈值 长度限制
             _starts.append(start)
             _ends.append(end)
     return _starts, _ends
