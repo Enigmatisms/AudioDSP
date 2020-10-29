@@ -6,11 +6,13 @@
 
 import os
 import sys
+import threading
 import numpy as np
-import threading as th
+import multiprocessing as mtp
+from time import time
 import matplotlib.pyplot as plt
-from librosa import load as lrLoad
 from random import choice as rdc
+from librosa import load as lrLoad
 from cv2 import THRESH_BINARY, THRESH_OTSU
 from cv2 import threshold as cvThreshold
 
@@ -330,38 +332,58 @@ class VAD:
         self.count   = [0]
         self.silence = [0]
 
-    def process(self):
+    def process(self, do_plot = True):
         self.y = VAD._enframe_(self.data, self.wlen, self.inc)          # 分帧操作
         self.zcrs = VAD._zeroCrossingRate_(self.y, self.fn)
         self.amps = VAD._calculateMeanAmp_(self.y)              # 平均幅度
         # ================= 语音分割以及自适应化 ========================
         self._vadSegment_()   
         self.starts, self.ends = self._faultsFiltering_(self.amps, self.starts, self.ends, 0.012)
-        ### TODO:可以对这三个函数进行并行优化
         self._vadPostProcess_(12)
         self._adaptiveThreshold_()
         self._annealingSearch_()
         # =============================================================
-        print("Voice starts:", self.starts)
-        print("Voice ends:", self.ends)
-        print("VAD completed.")
-        plt.figure(VAD._fig_num)
-        VAD._fig_num += 1
-        plt.plot(np.arange(self.N), self.data, c = 'k')
-        for i in range(len(self.starts)):
-            ys = np.linspace(-1, 1, 5);
-            plt.plot(np.ones_like(ys) * self.starts[i] * self.inc, ys, c = 'red')
-            plt.plot(np.ones_like(ys) * self.ends[i] * self.inc, ys, c = 'blue')
-        VAD._averageAmpPlot_(self.amps, self.starts, self.ends, True)
-        VAD._normalizedAmp_(self.amps, self.starts, self.ends)
-        plt.show()
+        if do_plot:
+            print("Voice starts:", self.starts)
+            print("Voice ends:", self.ends)
+            print("VAD completed.")
+            plt.figure(VAD._fig_num)
+            VAD._fig_num += 1
+            plt.plot(np.arange(self.N), self.data, c = 'k')
+            for i in range(len(self.starts)):
+                ys = np.linspace(-1, 1, 5);
+                plt.plot(np.ones_like(ys) * self.starts[i] * self.inc, ys, c = 'red')
+                plt.plot(np.ones_like(ys) * self.ends[i] * self.inc, ys, c = 'blue')
+            VAD._averageAmpPlot_(self.amps, self.starts, self.ends, True)
+            VAD._normalizedAmp_(self.amps, self.starts, self.ends)
+            plt.show()
+
+def vadLoadAndProcess(path):
+    vad = VAD(path)
+    vad.process(False)
 
 if __name__ == "__main__":
     number = sys.argv[1]
-    seg_num = sys.argv[2]
-    file = "..\\segment\\%s\\%s%02d.wav"%(number, number, int(seg_num))
-
-    vad = VAD(file)
-    vad.process()
+    using_thread = 1
+    if sys.argv.__len__() == 3:
+        using_thread = int(sys.argv[2])
+    start_t = time()
+    if using_thread:
+        proc_pool = []
+        for i in range(7):
+            file = "..\\segment\\%s\\%s%02d.wav"%(number, number, i)
+            pr = mtp.Process(target = vadLoadAndProcess, args = (file, ))
+            proc_pool.append(pr)
+            pr.start()
+        file = "..\\segment\\%s\\%s%02d.wav"%(number, number, 7)
+        vadLoadAndProcess(file)
+        for i in range(7):
+            proc_pool[i].join()
+    else:
+        for i in range(8):
+            file = "..\\segment\\%s\\%s%02d.wav"%(number, number, i)
+            vadLoadAndProcess(file)
+    end_t = time()
+    print("Running time: ", end_t - start_t)
 
 
