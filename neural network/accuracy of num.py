@@ -1,4 +1,6 @@
 '''
+    yk    2020-10-29
+    小更新
     yk    2020-10-26
     用网络模型，测试数字被识别为其他数字的概率。
     0和6频域上分不开，准确率只有50%
@@ -12,11 +14,13 @@ import numpy as np
 from keras.models import load_model
 import matplotlib.pyplot as plt
 #读取模型
-model=load_model('model.h5')
+model=load_model('D:\\DSP\\model.h5')
 #读取数据
-x_test=np.loadtxt("mfcc_cdata.txt")
-y_test=np.loadtxt("mfcc_clabel.txt")
-x_test = x_test.reshape(-1,40,13,1)
+num=20
+feature=10
+x_test=np.loadtxt("mfcc1_cdata.txt")
+y_test=np.loadtxt("mfcc1_clabel.txt")
+x_test = x_test.reshape(-1,num,feature,1)
 #读取各个数的长度
 length=np.zeros(10,dtype=np.int32)
 #记录每个数的loss与accuracy
@@ -38,7 +42,7 @@ for i in range(10):
 #计算数字被识别为另一个数字的概率
 detail=np.zeros([10,10])
 for i in range(len(y_test)):
-    pre=np.argmax(model.predict(np.reshape(x_test[i],(1,40,13,1))))
+    pre=np.argmax(model.predict(np.reshape(x_test[i],(1,num,feature,1))))
     #if pre!=int(np.where(y_test[i]==1)[0]):
     detail[int(np.where(y_test[i]==1)[0])][pre]+=1
 for i in range(10):
