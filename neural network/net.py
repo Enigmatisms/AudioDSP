@@ -1,4 +1,7 @@
 '''
+yk 2020-10-29
+调整了网络结构，取消最后一层max——pool，减小输入数据特征数，降低了一层隐藏层，提高正则化参数
+目前准确率86%左右，还是老问题--过拟合
 yk 2020-10-18
 基于mfcc特征的语音识别~~~~~~
 用简单网络跑只能上70%，因此加入了卷积操作，把mfcc看成图像进行处理。。
@@ -18,17 +21,19 @@ from keras.utils import np_utils
 from keras.layers import Dense,Activation,Dropout,Flatten,Convolution2D,MaxPooling2D
 from keras.regularizers import l2
 
-x_train=np.loadtxt("mfcc_data.txt")
-y_train=np.loadtxt("mfcc_label.txt")
+num=20
+feature=10
+x_train=np.loadtxt("mfcc1_data.txt")
+y_train=np.loadtxt("mfcc1_label.txt")
 
-x_test=np.loadtxt("mfcc_cdata.txt")
-y_test=np.loadtxt("mfcc_clabel.txt")
-x_train = x_train.reshape(-1,40,13,1)
-x_test = x_test.reshape(-1,40,13,1)
+x_test=np.loadtxt("mfcc1_cdata.txt")
+y_test=np.loadtxt("mfcc1_clabel.txt")
+x_train = x_train.reshape(-1,num,feature,1)
+x_test = x_test.reshape(-1,num,feature,1)
 model=Sequential([
     Convolution2D
     (
-        input_shape=(40,13,1),
+        input_shape=(num,10,1),
         filters=32,
         kernel_size=3,
         strides=1,
@@ -63,19 +68,13 @@ model=Sequential([
         padding='same',
         activation='relu'
     ),   
-    MaxPooling2D
-    (
-        pool_size=2,
-        strides=1,
-        padding='same'
-    ),
     Flatten(),
     Dense(units=100,bias_initializer='one',kernel_regularizer=l2(0.01)),
     Activation('relu'),
     Dropout(0.2),
-    Dense(units=100,bias_initializer='one',kernel_regularizer=l2(0.01)),
-    Activation('relu'),
-    Dropout(0.2),
+    #Dense(units=100,bias_initializer='one',kernel_regularizer=l2(0.01)),
+    #Activation('relu'),
+    #Dropout(0.2),
     Dense(units=10,bias_initializer='one',kernel_regularizer=l2(0.01)),
     Activation('softmax')
 ])
@@ -99,3 +98,4 @@ print('train accuracy',accuracy)
 loss,accuracy=model.evaluate(x_test,y_test)
 print('\ntest loss',loss)
 print('test accuracy',accuracy)
+
