@@ -17,4 +17,6 @@ data/
 */*.zip
 */*.jpg
 */*.png
+*/build
+*/*.pyd
 */__pycache__
