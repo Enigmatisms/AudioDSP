@@ -7,14 +7,14 @@
 import os
 import sys
 import numpy as np
-from time import time
-from numba import jit
 import multiprocessing as mtp
 import matplotlib.pyplot as plt
-from random import choice as rdc
+from time import time
 from librosa import load as lrLoad
 from cv2 import THRESH_BINARY, THRESH_OTSU
 from cv2 import threshold as cvThreshold
+import wave
+import audioop
 from modules import *
 
 class VAD:
@@ -29,8 +29,10 @@ class VAD:
         self.starts = None
         if not os.path.exists(file):
             raise ValueError("No such file as '%s'!"%(file))
+        start_t = time()
         self.data, self.sr = lrLoad(file)
-        print("Data loaded.")
+        end_t = time()
+        print("Data loaded. Time consumed: ", end_t - start_t)
         # 需要在此处load
         # 每个类对应处理一段语音
 
@@ -40,65 +42,6 @@ class VAD:
         self.IS = IS
         self.NIS = int(np.round((IS * self.sr - wlen) / inc + 1))
         self.fn = int(np.round((self.N - wlen) / inc))
-
-    def _vadSegment_(self):
-        amp = sum(self.y ** 2)
-        zcrth = np.mean(self.zcrs[:self.NIS])
-        amp2 = 0.155                # 如何进行鲁棒的噪音估计？
-        amp1 = 0.205
-        zcr2 = 0.15 * zcrth
-        status  = 0
-        xn = 0
-        x1 = [0]
-        x2 = [0]
-        count = 0
-        silence = 0
-        for n in range(self.fn):
-            if status <= 1:
-                if amp[n] > amp1:
-                    x1[xn] = max(n - count - 1, 1)
-                    status = 2
-                    silence = 0
-                    count += 1
-                elif amp[n] > amp2 or self.zcrs[n] < zcr2:
-                    status = 1
-                    count += 1
-                else:
-                    status = 0
-                    count = 0
-                    x1[xn] = 0
-                    x2[xn] = 0
-            elif status == 2:
-                if amp[n] > amp2 or self.zcrs[n] < zcr2:
-                    count += 1
-                else:
-                    silence += 1
-                    if silence < VAD.__maxsilence__:
-                        count += 1
-                    elif count < VAD.__minlen__:
-                        status = 0
-                        silence = 0
-                        count = 0
-                    else:
-                        status = 3
-                        x2[xn] = x1[xn] + count
-            else:       # status == 3
-                status = 0
-                xn += 1
-                count = 0
-                silence = 0
-                x1.append(0)
-                x2.append(0)
-        e1 = len(x1)
-        if x1[-1] == 0:
-            e1 -= 1
-        SF = np.zeros(self.fn)
-        NF = np.ones(self.fn)
-        for i in range(e1):
-            SF[x1[i]:x2[i]] = 1
-            NF[x1[i]:x2[i]] = 0
-        speechIndex = np.arange(SF.size)[SF == 1]
-        self.starts, self.ends = findSegment(speechIndex)
 
     # VAD 得到结果后需要进行进一步处理 退火式的搜索
     def _vadPostProcess_(self, prev = 8):
@@ -210,7 +153,12 @@ class VAD:
             max_val = max(self.amps[start:end])
             _temp = self.amps[start:end].copy()
             _temp /= max_val                    # 归一化
-            self.ends[i] = start + annealing(_temp, old_end - start)  # 从原有的终止点开始搜索 返回值为移动的步长
+            pos, reverse = invAnnealing(_temp, old_end - start, start_temp = 1.2)
+            if reverse == True:
+                self.ends[i] = start + pos
+            else:
+                print("Reverse is False.")
+                self.ends[i] = start + annealing(_temp, old_end - start)  # 从原有的终止点开始搜索 返回值为移动的步长
 
     @staticmethod
     def _normalizedAmp_(amps, starts, ends):
@@ -234,7 +182,8 @@ class VAD:
         self.zcrs = zeroCrossingRate(self.y, self.fn)
         self.amps = calculateMeanAmp(self.y)              # 平均幅度
         # ================= 语音分割以及自适应化 ========================
-        self._vadSegment_()   
+        # self._vadSegment_()   
+        self.starts, self.ends = vadSegment(self.y, self.zcrs, self.fn, self.NIS)
         self.starts, self.ends = faultsFiltering(self.amps, self.starts, self.ends, 0.012)
         self._vadPostProcess_(12)
         self._adaptiveThreshold_()
@@ -259,10 +208,11 @@ class VAD:
 def vadLoadAndProcess(path, do_plot = False):
     vad = VAD(path)
     vad.process(do_plot)
+    
 
 if __name__ == "__main__":
     number = sys.argv[1]
-    using_thread = 1
+    using_thread = 0
     if sys.argv.__len__() == 3:
         using_thread = int(sys.argv[2])
     start_t = time()
@@ -278,9 +228,8 @@ if __name__ == "__main__":
         for i in range(7):
             proc_pool[i].join()
     else:
-        for i in range(1):
-            file = "..\\segment\\%s\\%s%02d.wav"%(number, number, i)
-            vadLoadAndProcess(file, True)
+        file = "..\\segment\\%s\\%s02.wav"%(number, number)
+        vadLoadAndProcess(file, True)
     end_t = time()
     print("Running time: ", end_t - start_t)
 

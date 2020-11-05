@@ -5,13 +5,12 @@
 """
 
 import librosa as lr
-from numba import jit
 import numpy as np
 import matplotlib.pyplot as plt
 import time
-import wave
+import sys
 
-path_prefix = "..\\raw\\"
+path_prefix = "..\\segment\\"
 
 class KalmanAudio:
     def __init__(self, _path, order = 12, length = 500, scale = 0.02):
@@ -89,7 +88,7 @@ class KalmanAudio:
     def saveAudio(self, path:str):
         pass
 
-    def drawResult(self, path, draw_filter = False):
+    def drawResult(self, draw_filter = False):
         plt.figure(1)
         plt.plot(np.arange(self.origin_data.size), self.origin_data, c = "k")
         plt.title("Original data (Down-sampled)")
@@ -101,7 +100,6 @@ class KalmanAudio:
             plt.plot(np.arange(self.data_size), self.output, c = "k")
             plt.title("Non-white-noised data (Kalman-Filtered)")
         plt.show()
-        np.savetxt(path, self.output)
 
     # 得到状态转移矩阵A
     @staticmethod
@@ -176,14 +174,15 @@ def showFFT(data, show_phase = False):
     plt.show()
 
 if __name__ == "__main__":
-    number = 2
-    inpath = path_prefix + str(number) + ".wav"
-    outpath = "..\\data\\" + str(number) + ".csv"
+    number = sys.argv[1]
+    choice = sys.argv[2]
+    print("De-Noise process: number(%s), choice(%s)"%(number, choice))
+    inpath = path_prefix + str(number) + "\\%s0"%(number) + "%s.wav"%(choice)
     ka = KalmanAudio(inpath)
     print("Start filtering...")
     ka.filtering()
     print("Filter process completed.")
-    ka.drawResult(outpath, True)
+    ka.drawResult(True)
     # inpath = "..\\full\\%d\\1.wav"%(number)
     # data, sr = lr.load(inpath)
     # showFFT(data)

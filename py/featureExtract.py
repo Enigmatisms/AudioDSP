@@ -14,12 +14,11 @@
 """
 
 import os
-import pickle
 import librosa as lr
 import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.svm import SVC
-import time
+from sklearn.ensemble import RandomForestClassifier as RFC
 import pickle as pkl
 
 # 无加窗操作的framing
@@ -111,28 +110,37 @@ def loadWavs(head = "..\\full\\", fnum = 50):
     return feats, classes
 
 if __name__ == "__main__":
+    use_forest = False
     fnum = 50
-
     C = 100
     gamma = 0.001
     max_iter = 2000
 
-    load = True             # 是否加载训练集（是否使用保存的模型）
+    load = False             # 是否加载训练集（是否使用保存的模型）
 
     test_data, test_label = loadWavs(head = "..\\full\\c")
     if load == True:
         train_data, train_label = loadWavs(fnum = fnum)
-        clf = SVC(C = C, gamma = gamma, max_iter = max_iter, kernel = 'rbf')
-        clf.fit(train_data, train_label)
-        
-        with open("..\\model\\svm.bin", "wb") as file:      # pickle 保存模型
+        if use_forest:
+            clf = RFC(max_depth = 16, min_samples_split = 6, oob_score = True)
+            clf.fit(train_data, train_label)
+        else:
+            clf = SVC(C = C, gamma = gamma, max_iter = max_iter, kernel = 'rbf')
+            clf.fit(train_data, train_label)
+        if use_forest:
+            path = "..\\model\\forest.bin"
+        else:
+            path = "..\\model\\svm.bin"
+        with open(path, "wb") as file:      # pickle 保存模型
             pkl.dump(clf, file)
     else:    # pickle 加载模型
-        with open("..\\model\\svm.bin", "rb") as file:
+        if use_forest:
+            path = "..\\model\\forest.bin"
+        else:
+            path = "..\\model\\svm.bin"
+        with open(path, "rb") as file:
             clf = pkl.load(file)
-
     res = clf.predict(test_data)
-
     print("Predicted result: ", res)
     print("While truth is: ", test_label)
     print("Difference is: ", res - test_label)
