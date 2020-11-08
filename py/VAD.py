@@ -2,6 +2,11 @@
     类封装 / 多线程加速
     @author HQY
     @date 2020.10.28
+    @todo：双门限法优化可以继续做的：probing操作
+        如果语音段长于某个值，起点终点的中点进行探查
+        中点幅度过小，说明双门限把两段声音放到同一个划分中了
+        比如数字1的100.wav 退火算法无能为力，而probing操作可以重新分割（不过需要进行insert操作，个人不是很喜欢）
+        假设全部有误那就是个O（n^2）插入操作
 """
 
 import os
@@ -13,9 +18,11 @@ from time import time
 from librosa import load as lrLoad
 from cv2 import THRESH_BINARY, THRESH_OTSU
 from cv2 import threshold as cvThreshold
-import wave
-import audioop
 from modules import *
+import xlwt
+import json
+
+__seg_cnt__ = 0
 
 class VAD:
     _fig_num = 1
@@ -140,7 +147,7 @@ class VAD:
         帧移不超过20帧（20帧对应了6000）（调整的最大限度）
         开始时就小于0.03的端点不优化
     """
-    def _annealingSearch_(self, max_mv = 20):
+    def _annealingSearch_(self, max_mv = 20, min_inv_step = 25):
         length = self.starts.__len__()
         for i in range(length):
             start = self.starts[i] - max_mv
@@ -153,12 +160,12 @@ class VAD:
             max_val = max(self.amps[start:end])
             _temp = self.amps[start:end].copy()
             _temp /= max_val                    # 归一化
-            pos, reverse = invAnnealing(_temp, old_end - start, start_temp = 1.2)
-            if reverse == True:
-                self.ends[i] = start + pos
-            else:
-                print("Reverse is False.")
-                self.ends[i] = start + annealing(_temp, old_end - start)  # 从原有的终止点开始搜索 返回值为移动的步长
+            if self.ends[i] - self.starts[i] >= min_inv_step:     # 足够长就可以反向退火搜索
+                pos, reverse = invAnnealing(_temp, old_end - start, start_temp = 1.2)
+                if reverse == True:
+                    self.ends[i] = start + pos
+                    continue
+            self.ends[i] = start + annealing(_temp, old_end - start)  # 从原有的终止点开始搜索 返回值为移动的步长
 
     @staticmethod
     def _normalizedAmp_(amps, starts, ends):
@@ -177,7 +184,7 @@ class VAD:
     def reset(self, num = 1):
         VAD._fig_num = num
 
-    def process(self, do_plot = True):
+    def process(self, do_plot = True, aux = False):
         self.y = enframe(self.data, self.wlen, self.inc)          # 分帧操作
         self.zcrs = zeroCrossingRate(self.y, self.fn)
         self.amps = calculateMeanAmp(self.y)              # 平均幅度
@@ -200,37 +207,82 @@ class VAD:
                 ys = np.linspace(-1, 1, 5);
                 plt.plot(np.ones_like(ys) * self.starts[i] * self.inc, ys, c = 'red')
                 plt.plot(np.ones_like(ys) * self.ends[i] * self.inc, ys, c = 'blue')
-            VAD._averageAmpPlot_(self.amps, self.starts, self.ends, True)
-            # print(self.amps.shape)
-            VAD._normalizedAmp_(self.amps, self.starts, self.ends)
+                pos = (self.ends[i] + self.starts[i]) / 2 * self.inc
+                segs = self.ends[i] - self.starts[i]
+                plt.annotate("%d"%(i), xy = (pos, 1), xytext = (pos, 1))
+                plt.annotate("%d"%(segs), xy = (pos, 0.8), xytext = (pos, 0.8))
+            if aux:
+                VAD._averageAmpPlot_(self.amps, self.starts, self.ends, True)
+                # print(self.amps.shape)
+                VAD._normalizedAmp_(self.amps, self.starts, self.ends)
             plt.show()
-
-def vadLoadAndProcess(path, do_plot = False):
-    vad = VAD(path)
-    vad.process(do_plot)
     
+    # 还需要一个输入参数：一个xlwt对象，workbook
+    def save(self, sheet):
+        global __seg_cnt__
+        segs = input("False segments:")
+        if segs == '':
+            print("No false segment. Exiting...")
+        else:
+            res = set()
+            spl = segs.split(',')
+            for num in spl:
+                temp = num.strip()
+                res.add(int(temp))
+            for i in range(len(self.starts)):
+                if i in res:
+                    continue
+                start = self.starts[i] * self.inc
+                end = self.ends[i] * self.inc
+                data = self.data[start:end]
+                for j in range(data.size):
+                    sheet.write(j + 1, __seg_cnt__, float(data[j]))
+                __seg_cnt__ += 1
 
+def vadLoadAndProcess(path, *args, do_plot = False, aux = False):
+    vad = VAD(path)
+    vad.process(do_plot, aux)
+    if len(args) > 0:
+        vad.save(args[0])
+    
 if __name__ == "__main__":
     number = sys.argv[1]
     using_thread = 0
+    step_out = False
+    to_select = 0
     if sys.argv.__len__() == 3:
         using_thread = int(sys.argv[2])
-    start_t = time()
-    if using_thread:
-        proc_pool = []
-        for i in range(7):
-            file = "..\\segment\\%s\\%s%02d.wav"%(number, number, i)
-            pr = mtp.Process(target = vadLoadAndProcess, args = (file, False))
-            proc_pool.append(pr)
-            pr.start()
-        file = "..\\segment\\%s\\%s%02d.wav"%(number, number, 7)
-        vadLoadAndProcess(file)
-        for i in range(7):
-            proc_pool[i].join()
+    elif sys.argv.__len__() == 4:
+        to_select = int(sys.argv[3])
+    if step_out == False:
+        start_t = time()
+        if using_thread:
+            proc_pool = []
+            for i in range(7):
+                file = "..\\segment\\%s\\%s%02d.wav"%(number, number, i)
+                pr = mtp.Process(target = vadLoadAndProcess, args = (file, False))
+                proc_pool.append(pr)
+                pr.start()
+            file = "..\\segment\\%s\\%s%02d.wav"%(number, number, 7)
+            vadLoadAndProcess(file)
+            for i in range(7):
+                proc_pool[i].join()
+        else:
+            file = "..\\segment\\%s\\%s%02d.wav"%(number, number, to_select)
+            vadLoadAndProcess(file, do_plot = True, aux = True)
+        end_t = time()
+        print("Running time: ", end_t - start_t)
     else:
-        file = "..\\segment\\%s\\%s02.wav"%(number, number)
-        vadLoadAndProcess(file, True)
-    end_t = time()
-    print("Running time: ", end_t - start_t)
-
+        wb = xlwt.Workbook()
+        sheet = wb.add_sheet("Sheet1")
+        path = "..\\segment\\test.xls"
+        seg_number = 5
+        for number in range(2):
+            for seg in range(seg_number):
+                file = "..\\segment\\%s\\%s%02d.wav"%(number, number, seg)
+                # 视觉辅助：自动标号
+                # 命令行输出：有错的就不进行输出了
+                # 需要有自动保存能力
+                vadLoadAndProcess(file, sheet, do_plot = True)
+        wb.save(path)
 
