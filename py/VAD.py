@@ -2,11 +2,18 @@
     类封装 / 多线程加速
     @author HQY
     @date 2020.10.28
-    @todo：双门限法优化可以继续做的：probing操作
-        如果语音段长于某个值，起点终点的中点进行探查
-        中点幅度过小，说明双门限把两段声音放到同一个划分中了
-        比如数字1的100.wav 退火算法无能为力，而probing操作可以重新分割（不过需要进行insert操作，个人不是很喜欢）
-        假设全部有误那就是个O（n^2）插入操作
+    @todo: (周六)
+    双门限法最后的优化
+        1. 数字3, 4, 7前向退火搜索（摩擦音还是不能很好地分割）（closed）
+        2. probing操作，探查过长段是否存在中部下陷（两个数字合并了）（closed）
+        3. 得到训练集
+    最后的说明：
+        1. 过零率我觉得可能是一个不可优化的问题。太容易受到噪声影响了，其他数字（比如1，2，5）的过零率
+            均没有太大的意义，但是很可能呈现与(3, 4, 7)一样的特征，导致3，4，7优化成功后1，2，5等数字效果明显下降
+        2. 前向退火是做不到的，过零率是个比较玄学的属性（）
+        3. probing 操作极有分辨不出：
+            1. 7这样存在摩擦音段 与 浊音段的语音
+            2. 两个音量差别很大但是中间间隔很短的，被分割成一个数字段的语音
 """
 
 import os
@@ -132,6 +139,7 @@ class VAD:
                     if end_counter < 2:                         # 多峰时，最多移动两次终止点
                         end_counter += 1
                         self.ends[i] = start + j     # 精分割，并扩大一帧选区
+            
 
     """
     退火搜索，想法是：向左右进行端点搜索，退火温度不要太高
@@ -215,7 +223,28 @@ class VAD:
                 VAD._averageAmpPlot_(self.amps, self.starts, self.ends, True)
                 # print(self.amps.shape)
                 VAD._normalizedAmp_(self.amps, self.starts, self.ends)
+                VAD.plotZeroCrossRate(self.zcrs, self.starts, self.ends)
             plt.show()
+
+    @staticmethod
+    def plotZeroCrossRate(zcrs, starts, ends):
+        plt.figure(VAD._fig_num)
+        VAD._fig_num += 1
+        zcrs /= max(zcrs)
+        plt.plot(np.arange(zcrs.size), zcrs, c = 'k')
+        plt.scatter(np.arange(zcrs.size), zcrs, c = 'k', s = 6)
+        for start, end in zip(starts, ends):
+            ys = np.linspace(0, 1, 3);
+            plt.plot(np.ones_like(ys) * start, ys, c = 'red')
+            plt.plot(np.ones_like(ys) * end, ys, c = 'blue')
+        plt.title("Average Zero Crossing Rate")
+
+    """
+        过零率也需要搜索，3 / 4 / 7 产生清音的固有问题（如果7不分割清音，就跟1一致了）
+        个人觉得方法可能非常简单：
+    """
+    def zcrsRefine(self):
+        pass
     
     # 还需要一个输入参数：一个xlwt对象，workbook
     def save(self, sheet):
@@ -248,7 +277,7 @@ def vadLoadAndProcess(path, *args, do_plot = False, aux = False):
 if __name__ == "__main__":
     number = sys.argv[1]
     using_thread = 0
-    step_out = False
+    step_out = True
     to_select = 0
     if sys.argv.__len__() == 3:
         using_thread = int(sys.argv[2])
@@ -273,16 +302,17 @@ if __name__ == "__main__":
         end_t = time()
         print("Running time: ", end_t - start_t)
     else:
-        wb = xlwt.Workbook()
-        sheet = wb.add_sheet("Sheet1")
-        path = "..\\segment\\test.xls"
-        seg_number = 5
-        for number in range(2):
+        seg_number = 4
+        for number in range(6, 10):
+            wb = xlwt.Workbook()
+            sheet = wb.add_sheet("Sheet1")
+            path = "..\\segment\\number_c%d.xls"%(number)
             for seg in range(seg_number):
-                file = "..\\segment\\%s\\%s%02d.wav"%(number, number, seg)
+                file = "..\\segment\\c%s\\%s%02d.wav"%(number, number, seg)
                 # 视觉辅助：自动标号
                 # 命令行输出：有错的就不进行输出了
                 # 需要有自动保存能力
+                print("Loaded from '%s'."%(file))
                 vadLoadAndProcess(file, sheet, do_plot = True)
-        wb.save(path)
+            wb.save(path)
 

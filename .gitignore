@@ -16,7 +16,10 @@ data/
 */*.txt
 */*.zip
 */*.jpg
+*/*.xls
+*/*.csv
 */*.png
 */build
-*/*.pyd
+*/*.rar
+*/*.xlsx
 */__pycache__

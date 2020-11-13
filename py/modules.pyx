@@ -160,10 +160,10 @@ def enframe(np.ndarray[float, ndim = 1] x, int win, int inc = 400):
 # @cython.wraparound(False)
 def vadSegment(y, zcrs, fn, NIS):
     cdef np.ndarray[np.float64_t, ndim=1] amp = sum(y ** 2)
-    cdef float zcrth = np.mean(zcrs[:NIS])
+    # cdef float zcrth = np.mean(zcrs[:NIS])
     cdef float amp2 = 0.155                   # 如何进行鲁棒的噪音估计？
     cdef float amp1 = 0.205                   
-    cdef float zcr2 = 0.15 * zcrth
+    cdef float zcr2 = 10.0
     cdef int status  = 0
     cdef int xn = 0
     cdef int count = 0
@@ -175,6 +175,7 @@ def vadSegment(y, zcrs, fn, NIS):
     cdef np.ndarray[np.int32_t, ndim=1] speechIndex
     x1 = [0]
     x2 = [0]
+    print("Zero crossing rate threshold: ", zcr2)
     for n in range(fn):
         if status <= 1:
             if amp[n] > amp1:
