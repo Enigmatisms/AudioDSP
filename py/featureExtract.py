@@ -20,6 +20,7 @@ import matplotlib.pyplot as plt
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier as RFC
 import pickle as pkl
+import xlrd
 
 # 无加窗操作的framing
 def windowedFrames(data, fnum = 50):
@@ -69,12 +70,40 @@ def averageAmpDiff(frames, fnum = 50):
     res2 /= np.max(res2)
     return np.concatenate((res1, res2)) 
 
+def LPC(y, order):
+    dtype = y.dtype.type
+    ar_coeffs = np.zeros(order + 1, dtype=dtype)
+    ar_coeffs[0] = dtype(1)
+    ar_coeffs_prev = np.zeros(order + 1, dtype=dtype)
+    ar_coeffs_prev[0] = dtype(1)
+    fwd_pred_error = y[1:]
+    bwd_pred_error = y[:-1]
+    den = np.dot(fwd_pred_error, fwd_pred_error) + np.dot(
+        bwd_pred_error, bwd_pred_error
+    )
+    for i in range(order):
+        if den <= 0:
+            print(">>> LPC warning: Numerical error, input ill-conditioned?")
+            return np.zeros(order + 1)
+        reflect_coeff = dtype(-2) * np.dot(bwd_pred_error, fwd_pred_error) / dtype(den)
+        ar_coeffs_prev, ar_coeffs = ar_coeffs, ar_coeffs_prev
+        for j in range(1, i + 2):
+            ar_coeffs[j] = ar_coeffs_prev[j] + reflect_coeff * ar_coeffs_prev[i - j + 1]
+        fwd_pred_error_tmp = fwd_pred_error
+        fwd_pred_error = fwd_pred_error + reflect_coeff * bwd_pred_error
+        bwd_pred_error = bwd_pred_error + reflect_coeff * fwd_pred_error_tmp
+        q = dtype(1) - reflect_coeff ** 2
+        den = q * den - bwd_pred_error[-1] ** 2 - fwd_pred_error[0] ** 2
+        fwd_pred_error = fwd_pred_error[1:]
+        bwd_pred_error = bwd_pred_error[:-1]
+    return ar_coeffs
+
 # 个人觉得这个特征很可能不行，而且还会很慢
 def getLPC(frames, fnum = 50):
     step = int(fnum / 10)
     res = np.zeros(fnum)
     for i in range(0, 10):
-        _lpc = lr.core.lpc(frames[i * step], 5)[1:]
+        _lpc = LPC(frames[i * step], 5)[1:]
         res[i * 5 : (i + 1) * 5] = _lpc
     res /= np.max(res)
     return res
@@ -87,7 +116,13 @@ def getFeatures(frames, fnum = 50):
     lpc = getLPC(frames, fnum)
     return np.concatenate((amp, azc, aad, lpc))
 
-def loadWavs(head = "..\\full\\", fnum = 50):
+"""
+    加载wav / xls文件
+    head - 加载路径前缀
+    fnum - 分帧数
+    load_xls - 加载xls文件（默认False）
+"""
+def loadWavs(head = "..\\full\\", fnum = 50, load_xls = False):
     feats = []
     classes = []
     for num in range(10):
@@ -97,12 +132,31 @@ def loadWavs(head = "..\\full\\", fnum = 50):
                 path = directory + "\\%d.wav"%(i + 1)
                 if os.path.exists(path) == False:
                     break
-                data, sr = lr.load(path, sr = None)
-                data = lr.resample(data, sr, 8000)
+                data, _ = lr.load(path)
                 frms = windowedFrames(data, fnum)
                 feats.append(getFeatures(frms, fnum))
                 classes.append(num)         # 类别增加
                 print("Loading from " + path)
+    if load_xls:
+        for num in range(0, 10):
+            directory = "..\\segment\\number_0" + "%d.xls"%(num)
+            if os.path.exists(directory) == True:
+                wb = xlrd.open_workbook(directory)
+                sh = wb.sheets()[0]
+                size = len(sh.row(0))
+                for c in range(size):
+                    col_data = sh.col(c)
+                    data = []
+                    for x in col_data:
+                        if not x.value == '':
+                            data.append(float(x.value))
+                        else:
+                            break
+                    data = np.array(data)
+                    frms = windowedFrames(data, fnum)
+                    feats.append(getFeatures(frms, fnum))
+                    classes.append(num)         # 类别增加
+            print("xls file loaded from " + directory)
 
     feats = np.array(feats)
     classes = np.array(classes)
@@ -116,11 +170,11 @@ if __name__ == "__main__":
     gamma = 0.001
     max_iter = 2000
 
-    load = False             # 是否加载训练集（是否使用保存的模型）
+    load = True             # 是否加载音频以及VAD切割数据？（使用新数据训练时使用）
 
     test_data, test_label = loadWavs(head = "..\\full\\c")
     if load == True:
-        train_data, train_label = loadWavs(fnum = fnum)
+        train_data, train_label = loadWavs(fnum = fnum, load_xls = True)
         if use_forest:
             clf = RFC(max_depth = 16, min_samples_split = 6, oob_score = True)
             clf.fit(train_data, train_label)

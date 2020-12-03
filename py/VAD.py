@@ -249,24 +249,24 @@ class VAD:
     # 还需要一个输入参数：一个xlwt对象，workbook
     def save(self, sheet):
         global __seg_cnt__
+        res = set()
         segs = input("False segments:")
         if segs == '':
             print("No false segment. Exiting...")
         else:
-            res = set()
             spl = segs.split(',')
             for num in spl:
                 temp = num.strip()
                 res.add(int(temp))
-            for i in range(len(self.starts)):
-                if i in res:
-                    continue
-                start = self.starts[i] * self.inc
-                end = self.ends[i] * self.inc
-                data = self.data[start:end]
-                for j in range(data.size):
-                    sheet.write(j + 1, __seg_cnt__, float(data[j]))
-                __seg_cnt__ += 1
+        for i in range(len(self.starts)):
+            if i in res:
+                continue
+            start = self.starts[i] * self.inc
+            end = self.ends[i] * self.inc
+            data = self.data[start:end]
+            for j in range(data.size):
+                sheet.write(j, __seg_cnt__, float(data[j]))
+            __seg_cnt__ += 1
 
 def vadLoadAndProcess(path, *args, do_plot = False, aux = False):
     vad = VAD(path)
@@ -302,13 +302,14 @@ if __name__ == "__main__":
         end_t = time()
         print("Running time: ", end_t - start_t)
     else:
-        seg_number = 4
-        for number in range(6, 10):
+        seg_number = 10
+        for number in range(8, 10):
             wb = xlwt.Workbook()
             sheet = wb.add_sheet("Sheet1")
-            path = "..\\segment\\number_c%d.xls"%(number)
+            path = "..\\segment\\number_0%d.xls"%(number)
+            __seg_cnt__ = 0
             for seg in range(seg_number):
-                file = "..\\segment\\c%s\\%s%02d.wav"%(number, number, seg)
+                file ="..\\segment\\%d\\%d%02d.wav"%(number, number, seg)
                 # 视觉辅助：自动标号
                 # 命令行输出：有错的就不进行输出了
                 # 需要有自动保存能力

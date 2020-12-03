@@ -1,6 +1,7 @@
 cimport numpy as np
 cimport cython
 import numpy as np
+import random as rd
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
