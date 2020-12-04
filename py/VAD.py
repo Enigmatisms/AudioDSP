@@ -224,7 +224,6 @@ class VAD:
                 # print(self.amps.shape)
                 VAD._normalizedAmp_(self.amps, self.starts, self.ends)
                 VAD.plotZeroCrossRate(self.zcrs, self.starts, self.ends)
-            plt.show()
 
     @staticmethod
     def plotZeroCrossRate(zcrs, starts, ends):
@@ -239,12 +238,33 @@ class VAD:
             plt.plot(np.ones_like(ys) * end, ys, c = 'blue')
         plt.title("Average Zero Crossing Rate")
 
-    """
-        过零率也需要搜索，3 / 4 / 7 产生清音的固有问题（如果7不分割清音，就跟1一致了）
-        个人觉得方法可能非常简单：
-    """
-    def zcrsRefine(self):
-        pass
+    # 输入原始数据，输出VAD分割结果, manual = 是否人工调整
+    def end2end(self, manual = True, do_plot = True, aux = False):
+        self.process(do_plot, aux)
+        plt.show()
+        outs = []
+        if manual:
+            outliers = set()
+            segs = input(">>> (Manual Mode) False segments that need to be removed:")
+            if segs == '':
+                print(">>> No false segment. Exporting...")
+            else:
+                spl = segs.split(',')
+                for num in spl:
+                    temp = num.strip()
+                    outliers.add(int(temp))
+            for i in range(len(self.starts)):
+                if not i in outliers:
+                    start = self.starts[i] * self.inc
+                    end = self.ends[i] * self.inc
+                    outs.append(self.data[start:end])
+        else:
+            print(">>> Automatic segmentation...")
+            for i in range(len(self.starts)):
+                start = self.starts[i] * self.inc
+                end = self.ends[i] * self.inc
+                outs.append(self.data[start:end])
+        return outs
     
     # 还需要一个输入参数：一个xlwt对象，workbook
     def save(self, sheet):
@@ -271,6 +291,7 @@ class VAD:
 def vadLoadAndProcess(path, *args, do_plot = False, aux = False):
     vad = VAD(path)
     vad.process(do_plot, aux)
+    plt.show()
     if len(args) > 0:
         vad.save(args[0])
     

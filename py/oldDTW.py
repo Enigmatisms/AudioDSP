@@ -20,7 +20,7 @@ class DTW:
 
     def getReference(self):
         for num in range(10):
-            for i in range(2):
+            for i in range(4):
                 path = "..\\refs\\%d%d.wav"%(num, i)
                 wav, _ = lr.load(path, sr = self.sr)
                 wav /= max(wav)
