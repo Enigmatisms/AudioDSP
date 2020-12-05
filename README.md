@@ -1,4 +1,4 @@
-<center><b><font size = 16 face = '微软雅黑'>AudioDSP</font></b></center>
+# AudioDSP
 
 ---
 ## 语音DSP实验项目
