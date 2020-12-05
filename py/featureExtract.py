@@ -139,24 +139,25 @@ def loadWavs(head = "..\\full\\", fnum = 50, load_xls = False):
                 print("Loading from " + path)
     if load_xls:
         for num in range(0, 10):
-            directory = "..\\segment\\number_0" + "%d.xls"%(num)
-            if os.path.exists(directory) == True:
-                wb = xlrd.open_workbook(directory)
-                sh = wb.sheets()[0]
-                size = len(sh.row(0))
-                for c in range(size):
-                    col_data = sh.col(c)
-                    data = []
-                    for x in col_data:
-                        if not x.value == '':
-                            data.append(float(x.value))
-                        else:
-                            break
-                    data = np.array(data)
-                    frms = windowedFrames(data, fnum)
-                    feats.append(getFeatures(frms, fnum))
-                    classes.append(num)         # 类别增加
-            print("xls file loaded from " + directory)
+            for i in range(2):
+                directory = "..\\segment\\number_" + "%d%d.xls"%(i, num)
+                if os.path.exists(directory) == True:
+                    wb = xlrd.open_workbook(directory)
+                    sh = wb.sheets()[0]
+                    size = len(sh.row(0))
+                    for c in range(size):
+                        col_data = sh.col(c)
+                        data = []
+                        for x in col_data:
+                            if not x.value == '':
+                                data.append(float(x.value))
+                            else:
+                                break
+                        data = np.array(data)
+                        frms = windowedFrames(data, fnum)
+                        feats.append(getFeatures(frms, fnum))
+                        classes.append(num)         # 类别增加
+                print("xls file loaded from " + directory)
 
     feats = np.array(feats)
     classes = np.array(classes)
@@ -176,7 +177,7 @@ if __name__ == "__main__":
     if load == True:
         train_data, train_label = loadWavs(fnum = fnum, load_xls = True)
         if use_forest:
-            clf = RFC(max_depth = 16, min_samples_split = 6, oob_score = True)
+            clf = RFC(max_depth = 18, min_samples_split = 8, oob_score = True)
             clf.fit(train_data, train_label)
         else:
             clf = SVC(C = C, gamma = gamma, max_iter = max_iter, kernel = 'rbf')

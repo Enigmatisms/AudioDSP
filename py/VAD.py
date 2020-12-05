@@ -27,7 +27,6 @@ from cv2 import THRESH_BINARY, THRESH_OTSU
 from cv2 import threshold as cvThreshold
 from modules import *
 import xlwt
-import json
 
 __seg_cnt__ = 0
 
