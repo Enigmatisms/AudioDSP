@@ -101,7 +101,7 @@ def calculateMeanAmp(np.ndarray[np.float64_t, ndim=2] y):
 @cython.boundscheck(False)
 @cython.wraparound(False)
 def faultsFiltering(np.ndarray[np.float64_t, ndim=1] amps, starts, ends, float thresh):
-    cdef int max_val = max(amps)
+    cdef float max_val = max(amps)
     _starts = []
     _ends = []
     if thresh > max_val / 4:

@@ -19,6 +19,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.svm import SVC
 from sklearn.ensemble import RandomForestClassifier as RFC
+from sklearn.metrics import confusion_matrix as confMat
 import pickle as pkl
 import xlrd
 
@@ -139,7 +140,7 @@ def loadWavs(head = "..\\full\\", fnum = 50, load_xls = False):
                 print("Loading from " + path)
     if load_xls:
         for num in range(0, 10):
-            for i in range(2):
+            for i in range(3):
                 directory = "..\\segment\\number_" + "%d%d.xls"%(i, num)
                 if os.path.exists(directory) == True:
                     wb = xlrd.open_workbook(directory)
@@ -165,13 +166,13 @@ def loadWavs(head = "..\\full\\", fnum = 50, load_xls = False):
     return feats, classes
 
 if __name__ == "__main__":
-    use_forest = False
+    use_forest = True
     fnum = 50
     C = 100
     gamma = 0.001
     max_iter = 2000
 
-    load = True             # 是否加载音频以及VAD切割数据？（使用新数据训练时使用）
+    load = False             # 是否加载音频以及VAD切割数据？（使用新数据训练时使用）
 
     test_data, test_label = loadWavs(head = "..\\full\\c")
     if load == True:
@@ -202,7 +203,10 @@ if __name__ == "__main__":
 
     rights = (res - test_label).astype(bool)
     print("Right Ratio: ", rights.sum() / res.size)
-
+    mat = confMat(test_label, res)
+    plt.imshow(mat, cmap = 'inferno', interpolation = 'nearest', origin = 'upper')
+    plt.colorbar()
+    plt.show()
 
     # plt.plot(np.arange(data.size), data, c = "k")
     # plt.show()

@@ -14,7 +14,7 @@ from keras.models import load_model
     use_forest - 使用随机森林？
 """
 def loadAndSeg(path = ".\\main.wav", manual = True, use_forest = True, sr = 22050):
-    model = load_model('D:\\number\\model.h5')
+    model = load_model('..\\model\\model.h5')
     vad = VAD(path)
     numbers = vad.end2end(manual = manual, do_plot = True)
     test_set = []

@@ -198,7 +198,7 @@ class VAD:
         # ================= 语音分割以及自适应化 ========================
         # self._vadSegment_()   
         self.starts, self.ends = vadSegment(self.y, self.zcrs, self.fn, self.NIS)
-        self.starts, self.ends = faultsFiltering(self.amps, self.starts, self.ends, 0.012)
+        self.starts, self.ends = faultsFiltering(self.amps, self.starts, self.ends, 0.025)
         self._vadPostProcess_(12)
         self._adaptiveThreshold_()
         self._annealingSearch_()

@@ -1,7 +1,7 @@
 # AudioDSP
 
 ---
-## 语音DSP实验项目
+## 语音DSP实验项目(Archived)
 
 ![]( https://visitor-badge.glitch.me/badge?page_id=<[your_page_id](https://github.com/Enigmatisms/AudioDSP)>)
 
@@ -24,6 +24,10 @@
 
 - Cython 在amd64平台上运行时至少需要VS2017的某个dll支持，并且需要配置mingw64编译器，才能对.pyx文件进行预编译
   - 没有Cython支持很可能运行不了VAD.py文件！
+- Cython 编译方法:在配置好编译器的环境中，配置setup.py文件，此后命令行中输入：
+```
+python setup.py build_ext --inplace -DSIZEOF_VOID_P=8 -DMS_WIN64
+```
 
 其余库均可pip
 
@@ -49,11 +53,11 @@
 >
 > A short and simple permissive license with conditions only requiring preservation of copyright and license notices. Licensed works, modifications, and larger works may be distributed under different terms and without source code.
 >
-> #### Permissions												Limitations
+> #### Permissions												&emsp;&emsp;&emsp;&emsp;Limitations
 >
-> :heavy_check_mark: Commercial use										:x: Liability
+> :heavy_check_mark: Commercial use										&emsp;&emsp;&emsp;&emsp;:x: Liability
 >
-> :heavy_check_mark:  Modification											:x: Warranty
+> :heavy_check_mark:  Modification											&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;:x: Warranty
 >
 > :heavy_check_mark:  Distribution
 >

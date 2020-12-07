@@ -1,6 +1,6 @@
 GMM_num = 10;
-train_path = 'E:\Speaker-Recognition/train'
-test_path = 'E:\Speaker-Recognition/test'
+train_path = 'D:\AudioDSP\Speaker-Recognition/train'
+test_path = 'D:\AudioDSP\Speaker-Recognition/test'
 train_info = dir(train_path);
 speakers_num = length(train_info) - 2;
 test_info = dir(strcat(test_path, '/*.wav'));

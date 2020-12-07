@@ -33,5 +33,5 @@ if __name__ == "__main__":
     num = 1
     if len(sys.argv) > 1:
         num = int(sys.argv[1])
-    path = "..\\segment\\random%d.wav"%(num)
+    path = "..\\random%d.wav"%(num)
     loadAndSeg(path)
